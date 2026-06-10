@@ -1,0 +1,4 @@
+# Dependências do projeto
+streamlit>=1.38.0
+requests>=2.31.0
+flask>=3.0.0

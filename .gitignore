@@ -50,3 +50,6 @@ logs/
 Thumbs.db
 .codex
 vibe_coding/docs/
+**/guia_completo.pdf
+**/guia_completo.md
+**/walkthrough.md
