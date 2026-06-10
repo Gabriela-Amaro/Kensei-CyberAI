@@ -8,3 +8,5 @@ vibe_coding/docs
 __pycache__/
 **/__pycache__/
 .streamlit/secrets.toml
+relatorio.md
+relatorio.pdf
