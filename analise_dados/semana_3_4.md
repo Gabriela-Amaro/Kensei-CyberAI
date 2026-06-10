@@ -30,7 +30,7 @@ analise_dados/
 │
 ├── dashboard.py                    # Script principal da aplicação web interativa
 ├── limpar_dados.py                 # Script de higienização inicial de dados faltantes/ruins
-└── perguntar_claude.py             # Script exploratório de integração com Anthropic Claude
+└── chat_gemini.py             # Script exploratório de integração com Gemini API
 ```
 
 ## 🚀 Como Executar Localmente
