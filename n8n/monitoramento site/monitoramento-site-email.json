@@ -1,0 +1,95 @@
+{
+  "name": "Monitoramento de site com alerta por email",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "a4ec6457-64fb-46af-97da-c7f40d2f9001",
+      "name": "Checar a cada 5 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -620,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const siteUrl = 'https://cajui.ifnmg.edu.br';\nconst timeoutMs = 15000;\nconst checkedAt = new Date().toISOString();\nconst controller = new AbortController();\nconst timeout = setTimeout(() => controller.abort(), timeoutMs);\n\ntry {\n  const response = await fetch(siteUrl, {\n    method: 'GET',\n    redirect: 'follow',\n    signal: controller.signal,\n    headers: {\n      'User-Agent': 'n8n-site-monitor/1.0',\n    },\n  });\n\n  clearTimeout(timeout);\n\n  if (response.ok) {\n    return [];\n  }\n\n  return [\n    {\n      json: {\n        site: siteUrl,\n        checkedAt,\n        statusCode: response.status,\n        error: `HTTP ${response.status} ${response.statusText}`.trim(),\n      },\n    },\n  ];\n} catch (error) {\n  clearTimeout(timeout);\n\n  return [\n    {\n      json: {\n        site: siteUrl,\n        checkedAt,\n        statusCode: null,\n        error: error.name === 'AbortError' ? `Timeout depois de ${timeoutMs / 1000}s` : error.message,\n      },\n    },\n  ];\n}"
+      },
+      "id": "60d42073-3c90-4394-933b-c130e6c23720",
+      "name": "Verificar se o site esta no ar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "SEU_EMAIL_REMETENTE_AQUI",
+        "toEmail": "SEU_EMAIL_DESTINO_AQUI",
+        "subject": "=Alerta: site fora do ar - {{ $json.site }}",
+        "text": "=O site {{ $json.site }} parece estar fora do ar.\n\nHorario da checagem: {{ $json.checkedAt }}\nStatus HTTP: {{ $json.statusCode || 'sem resposta' }}\nErro: {{ $json.error }}\n\nEste alerta foi gerado automaticamente pelo n8n."
+      },
+      "id": "8cb3713b-9358-4725-b1cf-3d25000bb18a",
+      "name": "Enviar email de alerta",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -100,
+        0
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Checar a cada 5 minutos": {
+      "main": [
+        [
+          {
+            "node": "Verificar se o site esta no ar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar se o site esta no ar": {
+      "main": [
+        [
+          {
+            "node": "Enviar email de alerta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "5a43b57d-46ef-4718-875b-f18b1e2ff501",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "monitoramento-site-email",
+  "tags": []
+}
