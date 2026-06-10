@@ -1,12 +1,52 @@
-.codex
-.venv
-slides
-vibe_coding/imagens
-vibe_coding/videos
-vibe_coding/docs
-.env
-__pycache__/
+# ==========================================
+# Git Ignore - Code Review & Documentation Gen
+# ==========================================
+
+# Banco de Dados Local (SQLite)
+**/database.db
+**/database.db-journal
+
+# Credenciais e Segredos (Contém API keys, Tokens e Senhas)
+**/.streamlit/secrets.toml
+**/.env
+**/secrets.toml
+
+# Ambientes Virtuais Python
+venv/
+.venv/
+env/
+ENV/
+pyenv/
+
+# Cache do Python
 **/__pycache__/
-.streamlit/secrets.toml
-relatorio.md
-relatorio.pdf
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Streamlit e Configurações de UI locais
+**/.streamlit/config.toml
+
+# PDFs, Relatórios e Arquivos Temporários
+**/*.pdf
+**/guia_completo.pdf
+**/relatorio.pdf
+**/relatorio.md
+
+# Logs e Arquivos do n8n (se rodar npm local)
+**/.n8n/
+**/n8n-local/
+logs/
+*.log
+
+# IDEs e Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.codex
+vibe_coding/docs/
