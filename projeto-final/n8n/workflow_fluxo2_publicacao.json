@@ -1,0 +1,132 @@
+{
+  "name": "Code Review & Documentation Generator - Fluxo 2 (Publicação)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish-docs",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-aprovacao",
+      "name": "Webhook aprovação",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "publish-docs"
+    },
+    {
+      "parameters": {
+        "jsCode": "const approval = $input.first().json.body;\n\nconst contentBase64 = Buffer.from(approval.final_docs, 'utf-8').toString('base64');\n\nconst commitMessage =\n  `docs: atualizacao automatica da documentacao\\n\\n` +\n  `Ref: ${approval.commit_sha.substring(0, 8)}\\n` +\n  `Aprovado em ${new Date().toISOString()}`;\n\nreturn [{\n  json: {\n    repo_name: approval.repo_name,\n    commit_sha: approval.commit_sha,\n    content_base64: contentBase64,\n    commit_message: commitMessage,\n    api_url: `https://api.github.com/repos/${approval.repo_name}/contents/README.md`\n  }\n}];"
+      },
+      "id": "preparar-commit",
+      "name": "Preparar Commit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.api_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github.v3+json" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-buscar-sha",
+      "name": "HTTP Buscar SHA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_SEU_GITHUB_TOKEN",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $('Preparar Commit').first().json.api_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "message", "value": "={{ $('Preparar Commit').first().json.commit_message }}" },
+            { "name": "content", "value": "={{ $('Preparar Commit').first().json.content_base64 }}" },
+            { "name": "sha", "value": "={{ $json.sha }}" },
+            { "name": "branch", "value": "main" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "executar-commit",
+      "name": "Executar Commit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_SEU_GITHUB_TOKEN",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Documentacao publicada com sucesso no repositorio.\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-webhook",
+      "name": "Response to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1180, 300]
+    }
+  ],
+  "connections": {
+    "Webhook aprovação": {
+      "main": [
+        [{ "node": "Preparar Commit", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar Commit": {
+      "main": [
+        [{ "node": "HTTP Buscar SHA", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP Buscar SHA": {
+      "main": [
+        [{ "node": "Executar Commit", "type": "main", "index": 0 }]
+      ]
+    },
+    "Executar Commit": {
+      "main": [
+        [{ "node": "Response to Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "code-review" },
+    { "name": "documentation" },
+    { "name": "github" },
+    { "name": "publish" }
+  ],
+  "triggerCount": 1
+}
