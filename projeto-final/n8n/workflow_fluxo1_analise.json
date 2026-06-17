@@ -1,0 +1,396 @@
+{
+  "name": "Code Review & Documentation Generator - Fluxo 1 (Análise)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "github-push",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-github-push",
+      "name": "Webhook GitHub Push",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "github-push"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.body;\nlet payload;\n\nif (typeof raw.payload === 'string') {\n  payload = JSON.parse(raw.payload);\n} else {\n  payload = raw;\n}\n\nconst event = $input.first().json.headers['x-github-event'];\nif (event !== 'push') {\n  return [{\n    json: {\n      skipped: true,\n      reason: `Evento '${event}' ignorado. Apenas 'push' é processado.`\n    }\n  }];\n}\n\nconst repoFullName = payload.repository.full_name;\nconst repoName = payload.repository.name;\nconst repoOwner = payload.repository.owner.login || payload.repository.owner.name;\nconst defaultBranch = payload.repository.default_branch || 'main';\n\nconst headCommitSha = payload.head_commit.id;\nconst beforeSha = payload.before;\nconst afterSha = payload.after;\n\nconst commits = payload.commits || [];\nconst modifiedFiles = [];\ncommits.forEach(commit => {\n  (commit.added || []).forEach(f => modifiedFiles.push({ file: f, action: 'added' }));\n  (commit.modified || []).forEach(f => modifiedFiles.push({ file: f, action: 'modified' }));\n  (commit.removed || []).forEach(f => modifiedFiles.push({ file: f, action: 'removed' }));\n});\n\nreturn [{\n  json: {\n    skipped: false,\n    repo_full_name: repoFullName,\n    repo_name: repoName,\n    repo_owner: repoOwner,\n    default_branch: defaultBranch,\n    head_commit_sha: headCommitSha,\n    before_sha: beforeSha,\n    after_sha: afterSha,\n    modified_files: modifiedFiles,\n    compare_url: `https://api.github.com/repos/${repoFullName}/compare/${beforeSha}...${afterSha}`\n  }\n}];"
+      },
+      "id": "parse-payload",
+      "name": "Parse Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "" },
+          "conditions": [
+            {
+              "id": "condition-skipped",
+              "leftValue": "={{ $json.skipped }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-skipped",
+      "name": "IF push?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo_full_name }}/git/trees/{{ $json.default_branch }}?recursive=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github.v3+json" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-arvore",
+      "name": "HTTP Árvore",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 140],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_SEU_GITHUB_TOKEN",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo_full_name }}/contents/README.md?ref={{ $json.default_branch }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github.v3+json" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-docs",
+      "name": "HTTP Docs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_SEU_GITHUB_TOKEN",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.compare_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github.v3.diff" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-diff",
+      "name": "HTTP Diff",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 460],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_SEU_GITHUB_TOKEN",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 3,
+        "options": {}
+      },
+      "id": "merge-node",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repoData = $('Parse Payload').first().json;\nconst treeResponse = $('HTTP Árvore').first().json;\nconst fileTree = (treeResponse.tree || [])\n  .map(item => `${item.type === 'tree' ? '[DIR]' : '[FILE]'} ${item.path}`)\n  .join('\\n');\n\nconst docsResponse = $('HTTP Docs').first().json;\nlet currentDocs = '';\nif (docsResponse.content) {\n  currentDocs = Buffer.from(docsResponse.content, 'base64').toString('utf-8');\n}\nconst docFileSha = docsResponse.sha || '';\nconst docFilePath = docsResponse.path || 'README.md';\n\nconst gitDiff = $('HTTP Diff').first().json;\nconst diffText = typeof gitDiff === 'string'\n  ? gitDiff : (gitDiff.body || JSON.stringify(gitDiff));\n\nconst analyzerPrompt = `\n<ARVORE_ARQUIVOS>\n${fileTree}\n</ARVORE_ARQUIVOS>\n\n<DOCUMENTACAO_ATUAL>\n${currentDocs}\n</DOCUMENTACAO_ATUAL>\n\n<GIT_DIFF>\n${diffText}\n</GIT_DIFF>\n`;\n\nreturn [{\n  json: {\n    ...repoData,\n    file_tree: fileTree,\n    current_docs: currentDocs,\n    git_diff: diffText,\n    doc_file_sha: docFileSha,\n    doc_file_path: docFilePath,\n    analyzer_prompt: analyzerPrompt\n  }\n}];"
+      },
+      "id": "montar-contexto-analisador",
+      "name": "Montar Contexto para IA - Analisador",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1460, 300]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.analyzer_prompt }}",
+        "options": {
+          "systemMessage": "# PROMPT 1 — Analisador de Contexto e Decisor de Atualização\n\n> **Papel:** Você é um Engenheiro de Documentação Técnica Sênior com 15 anos de experiência em análise de código e documentação corporativa.\n>\n> **Objetivo:** Avaliar se um push recente em um repositório Git introduziu mudanças que exigem atualização da documentação existente.\n\n---\n\n## Dados de Entrada\n\nVocê receberá **três blocos de contexto** delimitados por tags XML:\n\n```\n<ARVORE_ARQUIVOS>\n{tree}\n</ARVORE_ARQUIVOS>\n\n<DOCUMENTACAO_ATUAL>\n{current_docs}\n</DOCUMENTACAO_ATUAL>\n\n<GIT_DIFF>\n{git_diff}\n</GIT_DIFF>\n```\n\n---\n\n## Instruções de Análise\n\nAnalise **sistematicamente** cada um dos seguintes critérios. Para cada critério, determine se o `git diff` introduziu mudanças relevantes:\n\n### 1. Novas Funcionalidades\n- Foram adicionados novos arquivos, classes, funções ou módulos que representam funcionalidades inéditas?\n- Existem novos endpoints, rotas, comandos CLI ou interfaces públicas?\n\n### 2. Contratos de API Modificados\n- Houve alteração em parâmetros de entrada/saída de APIs (REST, GraphQL, gRPC)?\n- Schemas de request/response foram modificados?\n- Códigos de status HTTP ou mensagens de erro mudaram?\n\n### 3. Regras de Negócio\n- A lógica core de domínio foi alterada (validações, cálculos, fluxos de decisão)?\n- Permissões, roles ou políticas de acesso foram modificadas?\n\n### 4. Configuração e Infraestrutura\n- Novas variáveis de ambiente foram adicionadas ou renomeadas?\n- Dependências críticas foram adicionadas/removidas (ex.: banco de dados, filas, cache)?\n- Arquivos de configuração (`docker-compose`, `Dockerfile`, CI/CD) tiveram mudanças estruturais?\n\n### 5. Arquitetura\n- Novos serviços, microsserviços ou módulos arquiteturais foram introduzidos?\n- O fluxo de dados entre componentes foi alterado?\n\n---\n\n## Regras de Decisão\n\n- Se **NENHUM** dos critérios acima foi afetado: `requires_update: false`\n- Se **QUALQUER UM** dos critérios acima foi afetado de forma significativa: `requires_update: true`\n- Mudanças **puramente cosméticas** (formatação, comentários, refatorações internas sem mudança de interface) **NÃO** exigem atualização.\n- Correções de bugs que **não alteram comportamento documentado** **NÃO** exigem atualização.\n\n---\n\n## Classificação de Impacto\n\n| Nível    | Descrição                                                                 |\n|----------|---------------------------------------------------------------------------|\n| **Low**  | Pequenas adições ou ajustes que afetam seções isoladas da documentação.   |\n| **Medium** | Mudanças que afetam múltiplas seções ou introduzem novos conceitos.     |\n| **High** | Alterações estruturais, breaking changes ou novos módulos arquiteturais.  |\n\n---\n\n## Formato de Saída (OBRIGATÓRIO)\n\nResponda **EXCLUSIVAMENTE** com o seguinte JSON. Não adicione texto antes, depois ou ao redor do JSON:\n\n```json\n{\n    \"requires_update\": true,\n    \"justification\": \"Explicação técnica detalhada citando arquivos e linhas específicas do diff que justificam a decisão. Inclua os critérios que foram ou não foram atendidos.\",\n    \"impact_level\": \"Low\"\n}\n```\n\n### Regras do JSON:\n- `requires_update`: booleano (`true` ou `false`)\n- `justification`: string com no mínimo 2 frases e no máximo 5 frases\n- `impact_level`: exatamente um de `\"Low\"`, `\"Medium\"` ou `\"High\"`\n- **Não** inclua campos adicionais\n- **Não** envolva o JSON em blocos de código markdown",
+          "requireSpecificOutput": true,
+          "outputFormat": "json"
+        }
+      },
+      "id": "ia-analisador",
+      "name": "IA Analisador",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1700, 300]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "id": "gemini-analisador",
+      "name": "Gemini Analisador",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1700, 520],
+      "credentials": {
+        "googleGeminiApi": {
+          "id": "CONFIGURE_SUA_GEMINI_API_KEY",
+          "name": "Gemini API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json;\nconst rawText = aiResponse.output || aiResponse.text || JSON.stringify(aiResponse);\nconst cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\nconst analysis = JSON.parse(cleaned);\n\nconst previous = $('Parse Payload').first().json;\n\nreturn [{\n  json: {\n    repo_full_name: previous.repo_full_name,\n    head_commit_sha: previous.head_commit_sha,\n    default_branch: previous.default_branch,\n    contextual_analysis: JSON.stringify(analysis),\n    requires_update: analysis.requires_update,\n    justification: analysis.justification,\n    impact_level: analysis.impact_level\n  }\n}];"
+      },
+      "id": "parse-resposta",
+      "name": "Parse da Resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1960, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "" },
+          "conditions": [
+            {
+              "id": "condition-requires-update",
+              "leftValue": "={{ $json.requires_update }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-requires-update",
+      "name": "IF requires_update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst fileTreePrompt2 = $('Montar Contexto para IA - Analisador').first().json.file_tree;\nconst currentDocsPrompt2 = $('Montar Contexto para IA - Analisador').first().json.current_docs;\nconst gitDiffPrompt2 = $('Montar Contexto para IA - Analisador').first().json.git_diff;\n\nconst generatorPrompt = `\n<DOCUMENTACAO_ATUAL>\n${currentDocsPrompt2}\n</DOCUMENTACAO_ATUAL>\n\n<GIT_DIFF>\n${gitDiffPrompt2}\n</GIT_DIFF>\n\n<ANALISE_CONTEXTO>\n${data.contextual_analysis}\n</ANALISE_CONTEXTO>\n\n<ARVORE_ARQUIVOS>\n${fileTreePrompt2}\n</ARVORE_ARQUIVOS>\n`;\n\nreturn [{ json: { ...data, generator_prompt: generatorPrompt } }];"
+      },
+      "id": "montar-contexto-gerador",
+      "name": "Montar Contexto para IA - Gerador",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2460, 200]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.generator_prompt }}",
+        "options": {
+          "systemMessage": "# PROMPT 2 — Gerador de Documentação em Padrão Corporativo\n\n> **Papel:** Você é um Technical Writer Sênior especializado em documentação corporativa de software. Você segue rigidamente padrões existentes e nunca inventa estruturas novas.\n>\n> **Objetivo:** Reescrever ou complementar a documentação existente de um projeto para refletir as mudanças introduzidas por um push recente, **mantendo fielmente** o padrão e tom já estabelecidos.\n\n---\n\n## Dados de Entrada\n\nVocê receberá os seguintes blocos de contexto delimitados por tags XML:\n\n```\n<DOCUMENTACAO_ATUAL>\n{current_docs}\n</DOCUMENTACAO_ATUAL>\n\n<GIT_DIFF>\n{git_diff}\n</GIT_DIFF>\n\n<ANALISE_CONTEXTO>\n{context_analysis_json}\n</ANALISE_CONTEXTO>\n\n<ARVORE_ARQUIVOS>\n{tree}\n</ARVORE_ARQUIVOS>\n```\n\n---\n\n## Instruções de Geração\n\n### Regras Fundamentais\n\n1. **PRESERVAR** toda a estrutura, formatação, tom e estilo da documentação atual.\n2. **NÃO REMOVER** seções existentes que continuam válidas.\n3. **COMPLEMENTAR** seções existentes com as novas informações.\n4. **ADICIONAR** novas seções somente quando necessário, seguindo a hierarquia existente.\n5. **NUNCA** inventar funcionalidades que não estão no `git diff`.\n6. **USAR** a justificativa da análise de contexto como guia para saber **o quê** documentar.\n\n### Seções Obrigatórias (adicionar/atualizar conforme necessidade)\n\nAo gerar ou atualizar a documentação, assegure-se de que as seguintes seções existam e estejam corretas. Se a documentação original já possui estas seções, **atualize-as**. Se não possui, **adicione-as** na posição mais lógica dentro da estrutura existente:\n\n---\n\n#### 📐 1. Arquitetura de Fluxo\n\nDescreva o fluxo de dados atualizado do sistema, destacando os componentes novos ou modificados. Use diagramas em Mermaid quando aplicável.\n\n- Liste cada componente envolvido no fluxo alterado.\n- Indique a direção do fluxo de dados.\n- Destaque **em negrito** os componentes novos ou modificados.\n\n---\n\n#### 🔑 2. Variáveis de Ambiente Modificadas\n\nDocumente **todas** as variáveis de ambiente novas, removidas ou alteradas:\n\n| Variável | Tipo | Obrigatória | Valor Padrão | Descrição |\n|----------|------|-------------|--------------|-----------|\n| `NOVA_VAR` | `string` | Sim | — | Breve descrição |\n\n- Se nenhuma variável foi alterada, mantenha a seção existente inalterada.\n\n---\n\n#### 📡 3. Contratos de Entrada/Saída de Novas APIs\n\nPara cada endpoint novo ou modificado, documente método, path, headers, request body, response e códigos de erro.\n\n---\n\n#### 🔗 4. Impacto nos Componentes Existentes\n\nListe explicitamente quais componentes existentes foram afetados pelas mudanças:\n\n| Componente | Tipo de Impacto | Descrição |\n|-----------|-----------------|-----------|\n| `arquivo.py` | Modificado | Breve descrição da mudança |\n\n- Classifique o impacto como: `Adicionado`, `Modificado`, `Removido` ou `Deprecado`.\n\n---\n\n## Diretrizes de Estilo\n\n- **Idioma:** Mantenha o mesmo idioma da documentação original (português ou inglês).\n- **Tom:** Técnico, objetivo e direto. Sem linguagem promocional.\n- **Formatação:** Markdown padrão (GitHub Flavored Markdown).\n- **Títulos:** Siga a hierarquia de `#` já existente na documentação.\n- **Exemplos de código:** Inclua exemplos funcionais e realistas.\n- **Datas:** Adicione ao changelog (se existir) a data no formato `YYYY-MM-DD`.\n\n---\n\n## Formato de Saída\n\nRetorne **EXCLUSIVAMENTE** o conteúdo Markdown completo da documentação atualizada, pronto para ser salvo diretamente como arquivo `.md`.\n\n**NÃO** envolva a saída em blocos de código. A saída deve começar diretamente com o primeiro caractere do documento Markdown."
+        }
+      },
+      "id": "ia-gerador",
+      "name": "IA Gerador",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [2700, 200]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "id": "gemini-gerador",
+      "name": "Gemini Gerador",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [2700, 420],
+      "credentials": {
+        "googleGeminiApi": {
+          "id": "CONFIGURE_SUA_GEMINI_API_KEY",
+          "name": "Gemini API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = $input.first().json;\nconst generatedDocs = inputData.output || inputData.text || null;\nconst decisionData = $('Parse da Resposta').first().json;\n\nreturn [{\n  json: {\n    repo_name: decisionData.repo_full_name,\n    commit_sha: decisionData.head_commit_sha,\n    contextual_analysis: decisionData.contextual_analysis,\n    generated_docs: generatedDocs,\n    status: 'pending'\n  }\n}];"
+      },
+      "id": "preparar-sqlite",
+      "name": "Preparar para SQLite",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2960, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5000/insert-doc",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "repo_name", "value": "={{ $json.repo_name }}" },
+            { "name": "commit_sha", "value": "={{ $json.commit_sha }}" },
+            { "name": "contextual_analysis", "value": "={{ $json.contextual_analysis }}" },
+            { "name": "generated_docs", "value": "={{ $json.generated_docs }}" },
+            { "name": "status", "value": "={{ $json.status }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "salvar-sqlite",
+      "name": "Salvar no SQLite",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3200, 300]
+    }
+  ],
+  "connections": {
+    "Webhook GitHub Push": {
+      "main": [
+        [{ "node": "Parse Payload", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Payload": {
+      "main": [
+        [{ "node": "IF push?", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF push?": {
+      "main": [
+        [
+          { "node": "HTTP Árvore", "type": "main", "index": 0 },
+          { "node": "HTTP Docs", "type": "main", "index": 0 },
+          { "node": "HTTP Diff", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "HTTP Árvore": {
+      "main": [
+        [{ "node": "Merge", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP Docs": {
+      "main": [
+        [{ "node": "Merge", "type": "main", "index": 1 }]
+      ]
+    },
+    "HTTP Diff": {
+      "main": [
+        [{ "node": "Merge", "type": "main", "index": 2 }]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [{ "node": "Montar Contexto para IA - Analisador", "type": "main", "index": 0 }]
+      ]
+    },
+    "Montar Contexto para IA - Analisador": {
+      "main": [
+        [{ "node": "IA Analisador", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gemini Analisador": {
+      "ai_languageModel": [
+        [{ "node": "IA Analisador", "type": "ai_languageModel", "index": 0 }]
+      ]
+    },
+    "IA Analisador": {
+      "main": [
+        [{ "node": "Parse da Resposta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse da Resposta": {
+      "main": [
+        [{ "node": "IF requires_update?", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF requires_update?": {
+      "main": [
+        [{ "node": "Montar Contexto para IA - Gerador", "type": "main", "index": 0 }],
+        [{ "node": "Preparar para SQLite", "type": "main", "index": 0 }]
+      ]
+    },
+    "Montar Contexto para IA - Gerador": {
+      "main": [
+        [{ "node": "IA Gerador", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gemini Gerador": {
+      "ai_languageModel": [
+        [{ "node": "IA Gerador", "type": "ai_languageModel", "index": 0 }]
+      ]
+    },
+    "IA Gerador": {
+      "main": [
+        [{ "node": "Preparar para SQLite", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar para SQLite": {
+      "main": [
+        [{ "node": "Salvar no SQLite", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "code-review" },
+    { "name": "documentation" },
+    { "name": "github" }
+  ],
+  "triggerCount": 1
+}
