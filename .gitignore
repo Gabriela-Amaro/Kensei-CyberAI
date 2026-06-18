@@ -33,7 +33,6 @@ pyenv/
 **/*.pdf
 **/guia_completo.pdf
 **/relatorio.pdf
-**/relatorio.md
 
 # Logs e Arquivos do n8n (se rodar npm local)
 **/.n8n/
